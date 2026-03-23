@@ -1,10 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Box, VStack, HStack, Table, Badge, Text, Button, Link } from '@chakra-ui/react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Box, VStack, HStack, Table, Badge, Text, Button, Link, Input } from '@chakra-ui/react';
 import { CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { storage } from '@api/monday-storage';
-import BoardSDK from '@api/BoardSDK.js';
-
-const board = new BoardSDK();
 
 const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, rolloverHours = 0 }) => {
   const [weekApprovals, setWeekApprovals] = useState({});
@@ -12,6 +9,12 @@ const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, 
   const [syncing, setSyncing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [xeroSubmitted, setXeroSubmitted] = useState(false);
+
+  // Name prompt modal state
+  const [namePrompt, setNamePrompt] = useState(null); // { weekNum, weekKey }
+  const [approverName, setApproverName] = useState('');
+  const [approvingWeek, setApprovingWeek] = useState(false);
+  const nameInputRef = useRef(null);
 
   const isLastFridayOfMonth = () => {
     const today = new Date();
@@ -116,24 +119,28 @@ const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, 
   const totalBillable = Math.min(rawTotal, 180);
   const overageToNextMonth = Math.max(rawTotal - 180, 0);
 
-  const handleWeekApprove = async (weekNum, weekKey) => {
+  const openNamePrompt = (weekNum, weekKey) => {
+    const existingApproval = weekApprovals[weekKey];
+    if (existingApproval?.approved) {
+      alert(`This week was already approved by ${existingApproval.by} on ${existingApproval.at}. Locked.`);
+      return;
+    }
+    setApproverName('');
+    setNamePrompt({ weekNum, weekKey });
+    setTimeout(() => nameInputRef.current?.focus(), 50);
+  };
+
+  const handleWeekApprove = async () => {
+    if (!namePrompt) return;
+    const { weekNum, weekKey } = namePrompt;
+    const userName = approverName.trim();
+    if (!userName) {
+      nameInputRef.current?.focus();
+      return;
+    }
+
+    setApprovingWeek(true);
     try {
-      const existingApproval = weekApprovals[weekKey];
-      if (existingApproval?.approved) {
-        alert(`This week was already approved by ${existingApproval.by} on ${existingApproval.at}. Locked.`);
-        return;
-      }
-
-      let userName = 'Nadia';
-      let userId = null;
-      try {
-        const currentUser = await board.users.me().execute();
-        userName = currentUser.name;
-        userId = currentUser.id;
-      } catch (userErr) {
-        console.warn('Could not fetch current user (guest restriction). Using fallback identity.');
-      }
-
       const now = new Date();
       const dd = String(now.getDate()).padStart(2, '0');
       const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -145,17 +152,18 @@ const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, 
       const monthKey = `week_approvals_${dateRange.from.getFullYear()}_${dateRange.from.getMonth()}`;
       const newApprovals = {
         ...weekApprovals,
-        [weekKey]: { approved: true, by: userName, userId, at: timestamp }
+        [weekKey]: { approved: true, by: userName, userId: null, at: timestamp }
       };
       await storage().key(monthKey).set(newApprovals);
       setWeekApprovals(newApprovals);
+      setNamePrompt(null);
       await loadApprovals();
-
-      alert(`✅ Week ${weekNum} approved by ${userName} on ${timestamp}\n\nThis approval is now locked.`);
       onRefresh?.();
     } catch (err) {
       console.error('Failed to save week approval:', err);
       alert('Failed to save approval. Please try again.');
+    } finally {
+      setApprovingWeek(false);
     }
   };
 
@@ -330,7 +338,7 @@ const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, 
                       fontWeight="700"
                       _hover={{ bg: '#1A6FA8' }}
                       transition="all 0.2s"
-                      onClick={() => handleWeekApprove(week.weekNum, week.weekKey)}
+                      onClick={() => openNamePrompt(week.weekNum, week.weekKey)}
                     >
                       Approve W{week.weekNum}
                     </Button>
@@ -423,6 +431,89 @@ const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, 
           )}
         </VStack>
       </VStack>
+
+      {/* Name prompt modal */}
+      {namePrompt && (
+        <Box
+          position="fixed"
+          inset="0"
+          bg="rgba(0,0,0,0.7)"
+          zIndex={1000}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          onClick={(e) => { if (e.target === e.currentTarget) setNamePrompt(null); }}
+        >
+          <Box
+            bg="#22252A"
+            border="1px solid"
+            borderColor="#343840"
+            rounded="xl"
+            p={6}
+            w="340px"
+            shadow="2xl"
+          >
+            <VStack gap={4} align="stretch">
+              <VStack gap={1} align="start">
+                <Text fontSize="md" fontWeight="700" color="#ECEEF0">
+                  Approve Week {namePrompt.weekNum}
+                </Text>
+                <Text fontSize="sm" color="#8A9099">
+                  Enter your name to confirm this approval. This cannot be undone.
+                </Text>
+              </VStack>
+
+              <Input
+                ref={nameInputRef}
+                placeholder="Your name"
+                value={approverName}
+                onChange={(e) => setApproverName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleWeekApprove(); if (e.key === 'Escape') setNamePrompt(null); }}
+                bg="#1A1C20"
+                border="1px solid"
+                borderColor="#343840"
+                color="#ECEEF0"
+                _placeholder={{ color: '#565C66' }}
+                _focus={{ borderColor: '#2E9BD6', outline: 'none' }}
+                rounded="lg"
+                px={3}
+                py={2}
+                fontSize="sm"
+              />
+
+              <HStack gap={3} justify="flex-end">
+                <Button
+                  size="sm"
+                  bg="transparent"
+                  color="#8A9099"
+                  border="1px solid"
+                  borderColor="#343840"
+                  rounded="lg"
+                  fontWeight="600"
+                  _hover={{ bg: '#2A2E35', color: '#ECEEF0' }}
+                  onClick={() => setNamePrompt(null)}
+                  disabled={approvingWeek}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  bg={approverName.trim() ? '#2E9BD6' : '#2A2E35'}
+                  color="white"
+                  border="none"
+                  rounded="lg"
+                  fontWeight="700"
+                  _hover={{ bg: approverName.trim() ? '#1A6FA8' : '#2A2E35' }}
+                  onClick={handleWeekApprove}
+                  disabled={!approverName.trim() || approvingWeek}
+                >
+                  {approvingWeek ? 'Saving…' : `Confirm Approval`}
+                </Button>
+              </HStack>
+            </VStack>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };
