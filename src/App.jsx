@@ -73,9 +73,10 @@ export default function App() {
 
   const [isLastFriday, setIsLastFriday] = useState(isLastFridayOfMonth());
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
+  const  fetchData:
+javascript
+const toLocalDateStr = (d) => 
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     try {
       let query = board.items()
         .withColumns(['date', 'hourStarted', 'timeTracking'])
