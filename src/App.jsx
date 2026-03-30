@@ -83,8 +83,8 @@ const toLocalDateStr = (d) =>
         .withSubItems(['status']);
 
       if (dateRange?.from && dateRange?.to) {
-        const fromStr = dateRange.from.toISOString().split('T')[0];
-        const toStr = dateRange.to.toISOString().split('T')[0];
+       const fromStr = toLocalDateStr(dateRange.from);
+const toStr = toLocalDateStr(dateRange.to);
         query = query.where({ date: { between: { from: fromStr, to: toStr } } });
       }
 
@@ -103,8 +103,8 @@ const toLocalDateStr = (d) =>
             .withSubItems(['status']);
 
           if (dateRange?.from && dateRange?.to) {
-            const fromStr = dateRange.from.toISOString().split('T')[0];
-            const toStr = dateRange.to.toISOString().split('T')[0];
+      const fromStr = toLocalDateStr(dateRange.from);
+const toStr = toLocalDateStr(dateRange.to);
             fallbackQuery = fallbackQuery.where({ date: { between: { from: fromStr, to: toStr } } });
           }
 
@@ -152,8 +152,9 @@ const toLocalDateStr = (d) =>
               .where({
                 date: {
                   between: {
-                    from: prevMonthFrom.toISOString().split('T')[0],
-                    to: prevMonthTo.toISOString().split('T')[0]
+                   from: toLocalDateStr(prevMonthFrom),
+to: toLocalDateStr(prevMonthTo)
+
                   }
                 }
               })
@@ -205,7 +206,7 @@ const toLocalDateStr = (d) =>
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `hours-export-${new Date().toISOString().split('T')[0]}.csv`);
+link.setAttribute('download', `hours-export-${toLocalDateStr(new Date())}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
