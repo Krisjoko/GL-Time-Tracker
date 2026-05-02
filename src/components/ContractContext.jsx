@@ -1,6 +1,27 @@
 import { Box, VStack, Text, HStack, Badge, Separator } from '@chakra-ui/react';
 import { Calendar, Target, Clock, TrendingUp } from 'lucide-react';
 
+const SA_PUBLIC_HOLIDAYS = {
+  2026: [
+    { month: 0,  day: 1,  name: "New Year's Day" },
+    { month: 3,  day: 3,  name: "Good Friday" },
+    { month: 3,  day: 6,  name: "Family Day" },
+    { month: 3,  day: 27, name: "Freedom Day" },
+    { month: 4,  day: 1,  name: "Workers' Day" },
+    { month: 5,  day: 16, name: "Youth Day" },
+    { month: 7,  day: 10, name: "National Women's Day" },
+    { month: 8,  day: 24, name: "Heritage Day" },
+    { month: 11, day: 16, name: "Day of Reconciliation" },
+    { month: 11, day: 25, name: "Christmas Day" },
+  ]
+};
+
+const getMonthPublicHolidays = (year, month) =>
+  (SA_PUBLIC_HOLIDAYS[year] || [])
+    .filter(h => h.month === month)
+    .map(h => ({ name: h.name, date: new Date(year, h.month, h.day) }))
+    .filter(h => { const d = h.date.getDay(); return d !== 0 && d !== 6; });
+
 const ContractContext = ({ totalHours = 0, dateRange = {}, nextMonthRollover = 0, monthCount = 1 }) => {
   const now = new Date();
   const isMultiMonth = monthCount > 1;
@@ -37,28 +58,35 @@ const ContractContext = ({ totalHours = 0, dateRange = {}, nextMonthRollover = 0
   const getCumulativeMetrics = () => {
     if (!isMultiMonth) {
       const workingDays = getWorkingDays(selectedYear, selectedMonth);
+      const publicHolidays = getMonthPublicHolidays(selectedYear, selectedMonth);
+      const netWorkingDays = workingDays - publicHolidays.length;
       const daysElapsed = getDaysElapsed(selectedYear, selectedMonth);
-      const monthlyPotential = workingDays * 8;
+      const monthlyPotential = netWorkingDays * 8;
       const cumulativeMax = 180;
       const remainingToMax = Math.max(cumulativeMax - totalHours, 0);
       const capacityRemaining = (remainingToMax / cumulativeMax) * 100;
-      return { workingDays, daysElapsed, monthlyPotential, cumulativeMax, remainingToMax, capacityRemaining };
+      return { workingDays, netWorkingDays, publicHolidays, daysElapsed, monthlyPotential, cumulativeMax, remainingToMax, capacityRemaining };
     }
 
     let totalWorkingDays = 0;
+    let totalHolidayDays = 0;
     const fromDate = new Date(dateRange.from);
     const toDate = new Date(dateRange.to);
     let currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
-      totalWorkingDays += getWorkingDays(currentDate.getFullYear(), currentDate.getMonth());
+      const y = currentDate.getFullYear();
+      const m = currentDate.getMonth();
+      totalWorkingDays += getWorkingDays(y, m);
+      totalHolidayDays += getMonthPublicHolidays(y, m).length;
       currentDate.setMonth(currentDate.getMonth() + 1);
     }
-    const cumulativePotential = totalWorkingDays * 8;
+    const netWorkingDays = totalWorkingDays - totalHolidayDays;
+    const cumulativePotential = netWorkingDays * 8;
     const cumulativeMax = monthCount * 180;
     const remainingToMax = Math.max(cumulativeMax - totalHours, 0);
     const capacityRemaining = (remainingToMax / cumulativeMax) * 100;
     const contractOverload = Math.max(totalHours - cumulativeMax, 0);
-    return { workingDays: totalWorkingDays, daysElapsed: totalWorkingDays, monthlyPotential: cumulativePotential, cumulativeMax, remainingToMax, capacityRemaining, contractOverload };
+    return { workingDays: totalWorkingDays, netWorkingDays, daysElapsed: totalWorkingDays, monthlyPotential: cumulativePotential, cumulativeMax, remainingToMax, capacityRemaining, contractOverload };
   };
 
   const metrics = getCumulativeMetrics();
@@ -102,7 +130,7 @@ const ContractContext = ({ totalHours = 0, dateRange = {}, nextMonthRollover = 0
           <VStack gap={0} align="stretch">
             {[
               { icon: Calendar, label: 'Total Working Days', value: metrics.workingDays },
-              { icon: TrendingUp, label: 'Cumulative Potential', sub: `${metrics.workingDays} days × 8h`, value: `${metrics.monthlyPotential}h`, valueColor: '#2E9BD6' },
+              { icon: TrendingUp, label: 'Cumulative Potential', sub: `${metrics.netWorkingDays} days × 8h`, value: `${metrics.monthlyPotential}h`, valueColor: '#2E9BD6' },
               { icon: Target, label: 'Cumulative Max', sub: `${monthCount} months × 180h`, value: `${metrics.cumulativeMax}h` },
               { icon: Target, label: 'To Cumulative Min', sub: `${monthCount} months × 160h`, value: totalHours >= (monthCount * 160) ? '✓ Reached' : `${Math.max((monthCount * 160) - totalHours, 0).toFixed(1)}h`, valueColor: totalHours >= (monthCount * 160) ? '#2E9BD6' : '#ECEEF0' },
               { icon: Clock, label: 'Remaining to Max', value: `${metrics.remainingToMax.toFixed(1)}h | ${metrics.capacityRemaining.toFixed(0)}%`, valueColor: '#2E9BD6' },
@@ -155,27 +183,37 @@ const ContractContext = ({ totalHours = 0, dateRange = {}, nextMonthRollover = 0
         </HStack>
 
         <VStack gap={0} align="stretch">
-          {[
-            { icon: Target, label: 'Daily Target', value: `${dailyTarget.toFixed(1)}h` },
-            { icon: Calendar, label: 'No. of working days', value: metrics.workingDays },
-            { icon: TrendingUp, label: 'Monthly Potential', sub: `${metrics.workingDays} days × ${dailyTarget}h`, value: `${metrics.monthlyPotential}h`, valueColor: '#2E9BD6' },
-            { icon: Target, label: 'To Min (160h)', value: totalHours >= 160 ? '✓ Reached' : `${Math.max(160 - totalHours, 0).toFixed(1)}h`, valueColor: totalHours >= 160 ? '#2E9BD6' : '#ECEEF0' },
-            { icon: Clock, label: 'Remaining to Max', value: `${metrics.remainingToMax.toFixed(1)}h | ${metrics.capacityRemaining.toFixed(0)}%`, valueColor: '#2E9BD6' },
-          ].map(({ icon: Icon, label, sub, value, valueColor }, i, arr) => (
-            <Box key={label}>
-              <HStack justify="space-between" align="center" py={3}>
-                <HStack gap={3}>
-                  {iconBox(Icon)}
-                  <VStack align="start" gap={0}>
-                    <Text {...labelStyle}>{label}</Text>
-                    {sub && <Text fontSize="xs" color="#565C66">{sub}</Text>}
-                  </VStack>
+          {(() => {
+            const rows = [
+              { icon: Target, label: 'Daily Target', value: `${dailyTarget.toFixed(1)}h` },
+              { icon: Calendar, label: 'No. of working days', value: metrics.workingDays },
+              ...(metrics.publicHolidays?.length > 0 ? [{
+                icon: Calendar,
+                label: 'Public Holidays',
+                sub: metrics.publicHolidays.map(h => `${h.name} (${h.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})`).join(' · '),
+                value: `−${metrics.publicHolidays.length} day${metrics.publicHolidays.length > 1 ? 's' : ''}`,
+                valueColor: '#E8856A',
+              }] : []),
+              { icon: TrendingUp, label: 'Monthly Potential', sub: `${metrics.netWorkingDays} days × ${dailyTarget}h`, value: `${metrics.monthlyPotential}h`, valueColor: '#2E9BD6' },
+              { icon: Target, label: 'To Min (160h)', value: totalHours >= 160 ? '✓ Reached' : `${Math.max(160 - totalHours, 0).toFixed(1)}h`, valueColor: totalHours >= 160 ? '#2E9BD6' : '#ECEEF0' },
+              { icon: Clock, label: 'Remaining to Max', value: `${metrics.remainingToMax.toFixed(1)}h | ${metrics.capacityRemaining.toFixed(0)}%`, valueColor: '#2E9BD6' },
+            ];
+            return rows.map(({ icon: Icon, label, sub, value, valueColor }, i) => (
+              <Box key={label}>
+                <HStack justify="space-between" align="center" py={3}>
+                  <HStack gap={3}>
+                    {iconBox(Icon)}
+                    <VStack align="start" gap={0}>
+                      <Text {...labelStyle}>{label}</Text>
+                      {sub && <Text fontSize="xs" color="#565C66" maxW="200px">{sub}</Text>}
+                    </VStack>
+                  </HStack>
+                  <Text {...valueStyle} color={valueColor || '#ECEEF0'} flexShrink={0} ml={3}>{value}</Text>
                 </HStack>
-                <Text {...valueStyle} color={valueColor || '#ECEEF0'}>{value}</Text>
-              </HStack>
-              {i < arr.length - 1 && <Separator borderColor="#2A2E35" />}
-            </Box>
-          ))}
+                {i < rows.length - 1 && <Separator borderColor="#2A2E35" />}
+              </Box>
+            ));
+          })()}
           {nextMonthRollover > 0 && (
             <>
               <Separator borderColor="#2A2E35" />

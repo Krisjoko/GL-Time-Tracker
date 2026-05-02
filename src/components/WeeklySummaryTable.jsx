@@ -3,6 +3,12 @@ import { Box, VStack, HStack, Table, Badge, Text, Button, Link, Input } from '@c
 import { CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { storage } from '@api/monday-storage';
 
+// Nadia's pre-approved sign-offs for March 2026 (approved 09/03 @07:11 SAST and 16/03 @06:58 SAST)
+const NADIA_MARCH_2026_APPROVALS = {
+  'week_2026-03-02': { approved: true, by: 'Nadia', userId: null, at: '09|03|2026 @07:11' },
+  'week_2026-03-09': { approved: true, by: 'Nadia', userId: null, at: '16|03|2026 @06:58' },
+};
+
 const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, rolloverHours = 0 }) => {
   const [weekApprovals, setWeekApprovals] = useState({});
   const [loading, setLoading] = useState(true);
@@ -33,16 +39,27 @@ const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, 
     const xeroKey = `xero_submitted_${dateRange.from.getFullYear()}_${dateRange.from.getMonth()}`;
     try {
       const { value } = await storage().key(monthKey).get();
-      const loaded = value || {};
+      let loaded = value || {};
 
       // One-time migration: fix miskeyed week_2026-03-01 → week_2026-03-02
       if (loaded['week_2026-03-01'] && !loaded['week_2026-03-02']) {
-        const fixed = { ...loaded, 'week_2026-03-02': loaded['week_2026-03-01'] };
-        await storage().key(monthKey).set(fixed);
-        setWeekApprovals(fixed);
-      } else {
-        setWeekApprovals(loaded);
+        loaded = { ...loaded, 'week_2026-03-02': loaded['week_2026-03-01'] };
+        delete loaded['week_2026-03-01'];
       }
+
+      // Seed Nadia's pre-approved sign-offs for March 2026 (correct SAST timestamps)
+      if (dateRange.from.getFullYear() === 2026 && dateRange.from.getMonth() === 2) {
+        let changed = false;
+        for (const [key, val] of Object.entries(NADIA_MARCH_2026_APPROVALS)) {
+          if (!loaded[key] || loaded[key].at !== val.at) {
+            loaded = { ...loaded, [key]: val };
+            changed = true;
+          }
+        }
+        if (changed) await storage().key(monthKey).set(loaded);
+      }
+
+      setWeekApprovals(loaded);
 
       const { value: xeroStatus } = await storage().key(xeroKey).get();
       setXeroSubmitted(xeroStatus || false);
@@ -221,13 +238,6 @@ const WeeklySummaryTable = ({ items = [], dateRange, onRefresh, totalHours = 0, 
         const xeroKey = `xero_submitted_${dateRange.from.getFullYear()}_${dateRange.from.getMonth()}`;
         await storage().key(xeroKey).set(true);
         setXeroSubmitted(true);
-
-        for (const item of items) {
-          const postMessage = overageToNextMonth > 0
-            ? `Final month-end approval completed. Total billable: ${totalBillable.toFixed(1)}h (${rawTotal.toFixed(1)}h logged, capped at 180h, ${overageToNextMonth.toFixed(1)}h rolling to next month). Xero invoice: ${result.invoiceNumber || 'pending'}`
-            : `Final month-end approval completed. Total billable: ${totalBillable.toFixed(1)}h. Xero invoice: ${result.invoiceNumber || 'pending'}`;
-          await board.item(item.id).post().create(postMessage).execute();
-        }
 
         await loadApprovals();
 
