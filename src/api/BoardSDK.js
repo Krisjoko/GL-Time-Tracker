@@ -36,12 +36,20 @@ function parseColumnValue(columnId, rawValue) {
       }
       case 'hour':
         return { hour: parsed.hour ?? 0, minute: parsed.minute ?? 0 };
-      case 'time_tracking9':
+      case 'time_tracking9': {
+        const stopped = parsed.duration ?? 0;
+        const isRunning = parsed.running ?? false;
+        const startedAt = parsed.startTime ?? null;
+        const liveElapsed =
+          isRunning && startedAt
+            ? Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
+            : 0;
         return {
-          durationInSeconds: parsed.duration ?? 0,
-          isRunning: parsed.running ?? false,
-          startedAt: parsed.startTime ?? null,
+          durationInSeconds: stopped + liveElapsed,
+          isRunning,
+          startedAt,
         };
+      }
       default:
         return parsed;
     }
